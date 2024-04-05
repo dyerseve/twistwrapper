@@ -5,8 +5,11 @@ import os
 
 # Function to run dnstwist on a domain
 def run_dnstwist(domain):
-    cmd = f'dnstwist -f json {domain}'
-    result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+    cmd = ['dnstwist', '-f', 'json', '-m', '-w', '-r', '--nameservers', dns, domain]
+    print("Running command:", " ".join(cmd))  # Debug statement
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error running dnstwist:", result.stderr)  # Debug statement
     return result.stdout
 
 # Function to load previous run data
@@ -28,11 +31,12 @@ def compare_results(current_data, previous_data):
     for domain, current_info in current_data.items():
         previous_info = previous_data.get(domain)
         if not previous_info or current_info != previous_info:
-            changes.append((domain, current_info))
+            changes.append((domain, current_info, previous_info))
     return changes
 
 # List of domains to check
 domains = ["accentcinti.com", "abdeburr.com", "cmitcincy.com"]
+dns = '8.8.8.8'
 
 # Load previous run data
 previous_data = load_previous_data()
@@ -43,7 +47,7 @@ current_data = {}
 # Run dnstwist for each domain and store the output
 for domain in domains:
     result = run_dnstwist(domain)
-    current_data[domain] = hashlib.sha256(result.encode()).hexdigest()
+    current_data[domain] = result
 
 # Compare current run data with previous run data
 changes = compare_results(current_data, previous_data)
@@ -51,9 +55,20 @@ changes = compare_results(current_data, previous_data)
 # Notify if changes are detected
 if changes:
     print("Changes detected:")
-    for domain, info in changes:
+    for domain, current_info, previous_info in changes:
         print(f"Domain: {domain}")
-        print(f"Info: {info}")
+        if previous_info:
+            print("Changes from previous run:")
+            current_lines = current_info.splitlines()
+            previous_lines = previous_info.splitlines()
+            for line in current_lines:
+                if line not in previous_lines:
+                    print(f"    + {line}")
+            for line in previous_lines:
+                if line not in current_lines:
+                    print(f"    - {line}")
+        else:
+            print("New domain detected.")
 else:
     print("No changes detected")
 
