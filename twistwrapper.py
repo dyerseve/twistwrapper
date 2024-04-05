@@ -1,76 +1,38 @@
 import subprocess
-import hashlib
 import json
-import os
+from datetime import datetime, timedelta
 
-# Function to run dnstwist on a domain
-def run_dnstwist(domain):
-    cmd = ['dnstwist', '-f', 'json', '-m', '-w', '-r', '--nameservers', dns, domain]
-    print("Running command:", " ".join(cmd))  # Debug statement
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print("Error running dnstwist:", result.stderr)  # Debug statement
-    return result.stdout
+def get_whois_created_dates(domains, nameserver):
+    all_whois_created_dates = {}
+    for domain in domains:
+        try:
+            output = subprocess.check_output(['dnstwist', '-f', 'json', '-m', '-w', '-r', '--nameservers', nameserver, domain])
+            results = json.loads(output)
+            for result in results:
+                if 'whois_created' in result and result['whois_created']:
+                    all_whois_created_dates[result['domain']] = {
+                        'whois_created': datetime.strptime(result['whois_created'], "%Y-%m-%d"),
+                        'whois_registrar': result.get('whois_registrar', 'N/A'),
+                        'dns_mx': result.get('dns_mx', [])
+                    }
+        except subprocess.CalledProcessError as e:
+            print(f"Error running dnstwist for domain {domain}: {e}")
+    return all_whois_created_dates
 
-# Function to load previous run data
-def load_previous_data():
-    if os.path.exists('previous_data.json'):
-        with open('previous_data.json', 'r') as file:
-            return json.load(file)
+def main(domains, nameserver, days, debug=False):
+    whois_created_dates = get_whois_created_dates(domains, nameserver)
+    if debug:
+        for domain, info in whois_created_dates.items():
+            print(f"Domain: {domain}, Whois Created: {info['whois_created']}")
     else:
-        return {}
+        recent_domains = [(domain, info) for domain, info in whois_created_dates.items() if datetime.now() - info['whois_created'] < timedelta(days=days)]
+        if recent_domains:
+            for domain, info in recent_domains:
+                print(f"Domain: {domain}, Whois Created: {info['whois_created']}, Whois Registrar: {info['whois_registrar']}, DNS MX: {', '.join(info['dns_mx'])}")
 
-# Function to save current run data
-def save_current_data(data):
-    with open('previous_data.json', 'w') as file:
-        json.dump(data, file, indent=4)
-
-# Function to compare current run data with previous run data
-def compare_results(current_data, previous_data):
-    changes = []
-    for domain, current_info in current_data.items():
-        previous_info = previous_data.get(domain)
-        if not previous_info or current_info != previous_info:
-            changes.append((domain, current_info, previous_info))
-    return changes
-
-# List of domains to check
-domains = ["accentcinti.com", "abdeburr.com", "cmitcincy.com"]
-dns = '8.8.8.8'
-
-# Load previous run data
-previous_data = load_previous_data()
-
-# Dictionary to store current run data
-current_data = {}
-
-# Run dnstwist for each domain and store the output
-for domain in domains:
-    result = run_dnstwist(domain)
-    current_data[domain] = result
-
-# Compare current run data with previous run data
-changes = compare_results(current_data, previous_data)
-
-# Notify if changes are detected
-if changes:
-    print("Changes detected:")
-    for domain, current_info, previous_info in changes:
-        print(f"Domain: {domain}")
-        if previous_info:
-            print("Changes from previous run:")
-            current_lines = current_info.splitlines()
-            previous_lines = previous_info.splitlines()
-            for line in current_lines:
-                if line not in previous_lines:
-                    print(f"    + {line}")
-            for line in previous_lines:
-                if line not in current_lines:
-                    print(f"    - {line}")
-        else:
-            print("New domain detected.")
-else:
-    print("No changes detected")
-
-# Save current run data for future comparison
-save_current_data(current_data)
+if __name__ == "__main__":
+    domains = ['exmaple1.com', 'sample2.com']  # Your list of domains goes here
+    nameserver = '8.8.8.8'  # Set your nameserver here
+    days = 7  # Set the number of days here
+    debug_mode = False  # Set to True to enable debug output
+    main(domains, nameserver, days, debug_mode)
